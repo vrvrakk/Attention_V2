@@ -13,14 +13,14 @@ from scipy.stats import t
 # Parameters
 plane = 'azimuth'
 
-predictor = 'phonemes'
+predictor = 'envelopes'
 
 model_type = 'combined' # envelopes, phonemes as other options
 
 norm = 'sep'
 
 # Select feature type: 'standard' or 'target_num'
-feature_type = 'standard'
+feature_type = 'target_num'
 
 
 project_path = Path.cwd()
