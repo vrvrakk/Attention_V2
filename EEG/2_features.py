@@ -8,6 +8,7 @@
 7. do this for stream 1 and 2 respectively
 8. save response arrays, stimuli arrays
 '''
+
 import os
 from pathlib import Path
 import json
@@ -34,11 +35,14 @@ else:
 subjects = ['sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub17', 'sub18', 'sub19',
     'sub20', 'sub21', 'sub22', 'sub23', 'sub24', 'sub25', 'sub26', 'sub27',
     'sub28', 'sub29', 'sub30', 'sub31', 'sub32', 'sub33', 'sub34', 'sub35',
-    'sub36', 'sub37', 'sub38', 'sub39', 'sub40'] # sub33 and sub35 - a1_0 and a2_3 header and marker files missing...
+    'sub36', 'sub37', 'sub38', 'sub39'] # sub33 and sub35 - a1_0 and a2_3 header and marker files missing...
+    # and sub40 meta data is wrong :( rip, as well as sub30 e2 block 0 :( e2_0
 
 
 for subject in subjects:
 
+    print(f'INITIALISING: PLANE: {plane.upper()} | Plane {plane.upper()}, condition {condition.upper()} -> target stream {target_stream.upper()}.')
+    print(f'Subject: {subject.upper()}')
     project_path = Path.cwd()
     concat_path = project_path / 'data' / subject / 'preprocessed'
     csv_path = project_path / 'data' / subject / 'csv'
@@ -50,14 +54,20 @@ for subject in subjects:
     # get events and event ids:
     events, ids = mne.events_from_annotations(concat_data)
 
+    # open csv files
+    print(f'Extracting blocks meta-data for {subject.upper()}:')
     with open(csv_path/f'{subject}.csv') as f:
         blocks_info = pd.read_csv(f)
 
     # keep only relevant blocks to the condition selected
     condition_blocks = blocks_info[blocks_info['block_condition'] == plane]
+    # keeping only blocks' info from condition  chosen:
     final_blocks = condition_blocks[condition_blocks['block_seq'] == target_stream]
+    final_blocks_indices = final_blocks.index.to_list()
+
     voices_order = list(final_blocks['Voices'])
     target_nums = list(final_blocks['Target Number'])
+
     if condition == 'a1' and subject == 'sub35':
         voices_order = voices_order[1:]
         final_blocks = final_blocks.iloc[1:]
@@ -68,6 +78,10 @@ for subject in subjects:
         target_nums.pop(3)
         final_blocks = final_blocks.drop(final_blocks.index[3])
 
+    if condition == 'e2' and subject == 'sub30':
+        voices_order = voices_order[1:]
+        final_blocks = final_blocks.iloc[1:]
+        target_nums = target_nums[1:]
 
     # load events mapping:
     helper_path = project_path / 'data' / 'misc'
@@ -79,8 +93,6 @@ for subject in subjects:
     stream1_nums = []
     stream2_nums = []
     response_nums = []
-
-
 
     for key, value in ids.items():
         if key in events_mapping['s1_events']:
@@ -155,11 +167,15 @@ for subject in subjects:
     s2_arr = event_arrays(s2_events)
     s2_arr = s2_arr.astype(int)
 
-    s1_ids = ['Stimulus/S  1', 'Stimulus/S  2', 'Stimulus/S  3', 'Stimulus/S  4', 'Stimulus/S  5', 'Stimulus/S  6','Stimulus/S  8', 'Stimulus/S  9']
-    s2_ids = ['Stimulus/S 65', 'Stimulus/S 66','Stimulus/S 67','Stimulus/S 68','Stimulus/S 69','Stimulus/S 70','Stimulus/S 72','Stimulus/S 73']
+    s1_ids = ['Stimulus/S  1', 'Stimulus/S  2', 'Stimulus/S  3', 'Stimulus/S  4', 'Stimulus/S  5', 'Stimulus/S  6',
+              'Stimulus/S  7', 'Stimulus/S  8', 'Stimulus/S  9']
+    s2_ids = ['Stimulus/S 65', 'Stimulus/S 66','Stimulus/S 67','Stimulus/S 68','Stimulus/S 69','Stimulus/S 70',
+              'Stimulus/S 71','Stimulus/S 72','Stimulus/S 73']
+
     s1_nums = [num for key, num in ids.items() if key in s1_ids]
     s2_nums = [num for key, num in ids.items() if key in s2_ids]
-    actual_nums = [1, 2, 3, 4, 5, 6, 8, 9]
+
+    actual_nums = [1, 2, 3, 4, 5, 6, 7, 8, 9]
     # assign correct numbers to s_arr...
     def assign_corr_vals(s_arr, s_nums):
         for arr_idx, value in enumerate(s_arr):
@@ -174,13 +190,15 @@ for subject in subjects:
 
     response_arr = event_arrays(response_events)
     response_arr = response_arr.astype(int)
-
     # convert responses to 1:
     for idx, resp in enumerate(response_arr):
         if resp not in [0, 9999]:
             response_arr[idx] = 1
         else:
             continue
+    for r_idx, event in enumerate(response_arr): # remove 9999 from responses lol
+        if event == 9999:
+            response_arr[r_idx] = 0
 
     # sort s1 and s2 envelope arrays based on segment and voice of each seg
     def get_features(s_arr):
@@ -189,19 +207,22 @@ for subject in subjects:
         i = 0
         while i < total_blocks:
             for idx, number in enumerate(s_arr):
+                print(f'BLOCK NUMBER {i} | ARRAY INDEX: {idx}')
                 block_end_timepoint = segment_timepoints[i]
                 voice = voices_order[i]
                 if idx <= block_end_timepoint:
                     if number not in  [0, 9999]:
-                        print(f'Number {number}, currently in block {i}, with voice {voice}. /n'
-                              f'Extracting relevant wav files...')
+                        if number == 7:
+                            # skipping non-existend 7
+                               continue
                         if number < 7:
+                            # first wav file is 00, 7 is absent so idx 0 = num 1, and idx 6 = num 8 & idx 7 = num 9
                             wav_idx = number - 1
                             mfa_idx = number
                         else:
                             wav_idx = number - 2
                             mfa_idx = number - 1
-                        # go into respective folder and extract envelope:
+                        # continue with normal number stimuli
                         voice_folder = voices_path / voice
                         wav_file = list(voice_folder.iterdir())[wav_idx]
                         envelope = np.load(wav_file)
@@ -212,7 +233,7 @@ for subject in subjects:
                         # now phonemes
                         mfa_voice_path = mfa_path / f'aligned_{voice}'
                         mfa_voice = list(mfa_voice_path.iterdir())[mfa_idx]
-                        print(f'For Number: {number}, mfa file is : {mfa_voice}, and envelope is: {wav_file}')
+                        # print(f'For Number: {number}, mfa file is : {mfa_voice}, and envelope is: {wav_file}')
                         mfa_file = textgrids.TextGrid(mfa_voice)
                         phones = mfa_file['phones']
                         first_phoneme = True
@@ -220,11 +241,10 @@ for subject in subjects:
                             if not phonemes.text:
                                 continue
                             else:
-                                if first_phoneme:
+                                if first_phoneme: # excluding first phoneme -> reflects acoustic onset more than phonemic processing
                                     first_phoneme = False
                                     continue
                                 phoneme_start = int(idx + (phonemes.xmin * 125))
-                                # phoneme_end = int(min(phoneme_start + (phonemes.dur * 125),len(phonemes_arr)))
                                 phonemes_arr[phoneme_start] = 1
                     else:
                         continue
@@ -234,8 +254,10 @@ for subject in subjects:
                         break
         return env_arr, phonemes_arr
 
-    env1_arr, phonemes1_arr = get_features(s1_arr)
-    env2_arr, phonemes2_arr = get_features(s2_arr)
+
+    env1_arr, phonemes1_arr = get_features(s1_arr_corr)
+    env2_arr, phonemes2_arr = get_features(s2_arr_corr)
+
 
     def get_target_num_features(s_arr):
         env_arr = np.zeros(s_arr.shape)
@@ -285,13 +307,66 @@ for subject in subjects:
                         break
         return env_arr, phonemes_arr
 
-    target_num_env1_arr, target_num_phonemes1_arr = get_target_num_features(s1_arr)
-    target_num_env2_arr, target_num_phonemes2_arr = get_target_num_features(s2_arr)
+    target_num_env1_arr, target_num_phonemes1_arr = get_target_num_features(s1_arr_corr)
+    target_num_env2_arr, target_num_phonemes2_arr = get_target_num_features(s2_arr_corr)
+
+    def get_non_target_num_features(s_arr):
+        env_arr = np.zeros(s_arr.shape)
+        phonemes_arr = np.zeros(s_arr.shape)
+        i = 0
+        while i < total_blocks:
+            for idx, number in enumerate(s_arr):
+                block_end_timepoint = segment_timepoints[i]
+                voice = voices_order[i]
+                target_num = target_nums[i]
+                if idx <= block_end_timepoint:
+                    if number == 7:
+                       continue
+                    if number not in [0, 9999, target_num]:
+                        if number < 7:
+                            wav_idx = number - 1
+                            mfa_idx = number
+                        else:
+                            wav_idx = number - 2
+                            mfa_idx = number - 1
+                        # Extract envelope
+                        voice_folder = voices_path / voice
+                        wav_file = list(voice_folder.iterdir())[wav_idx]
+                        envelope = np.load(wav_file)
+                        env_start = idx
+                        env_end = min(idx + len(envelope), len(env_arr))
+                        env_arr[env_start:env_end] = envelope[:env_end - env_start]
+                        # Extract phonemes
+                        mfa_voice_path = mfa_path / f'aligned_{voice}'
+                        mfa_voice = list(mfa_voice_path.iterdir())[mfa_idx]
+                        print(f'For Number: {number}, mfa file is: {mfa_voice}, and envelope is: {wav_file}')
+                        mfa_file = textgrids.TextGrid(mfa_voice)
+                        phones = mfa_file['phones']
+                        first_phoneme = True
+                        for phonemes in phones:
+                            if not phonemes.text:
+                                continue
+                            if first_phoneme:
+                                first_phoneme = False
+                                continue
+                            phoneme_onset = int(idx + (phonemes.xmin * 125))
+                            if phoneme_onset < len(phonemes_arr):
+                                phonemes_arr[phoneme_onset] = 1
+                    else:
+                        continue
+                else:
+                    i += 1
+                    if i == total_blocks:
+                        break
+        return env_arr, phonemes_arr
+
+
+    non_targets_env1_arr, non_targets_phonemes1_arr = get_non_target_num_features(s1_arr_corr)
+    non_targets_env2_arr, non_targets_phonemes2_arr = get_non_target_num_features(s2_arr_corr)
 
     # save envelope arrays and response arrays:
     save_path = project_path / 'data' / subject / 'features'
     os.makedirs(save_path, exist_ok=True)
-
 
     np.savez(save_path/f'{subject}_{condition}_features.npz',
              env1=env1_arr, env2=env2_arr, phon1=phonemes1_arr, phon2=phonemes2_arr, responses=response_arr)
@@ -300,4 +375,7 @@ for subject in subjects:
              env1=target_num_env1_arr, env2=target_num_env2_arr,
              phon1=target_num_phonemes1_arr, phon2=target_num_phonemes2_arr, responses=response_arr)
 
+    np.savez(save_path/f'{subject}_{condition}_non_targets_features.npz',
+             env1=non_targets_env1_arr, env2=non_targets_env2_arr,
+             phon1=non_targets_phonemes1_arr, phon2=non_targets_phonemes2_arr, responses=response_arr)
 

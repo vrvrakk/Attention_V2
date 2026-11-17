@@ -17,10 +17,10 @@ from meegkit import dss
 import json
 
 # Define parameters
-i = 1
+i = 3
 conditions = ['a1', 'a2', 'e1', 'e2']
 condition = conditions[i]
-subject = 'sub33'
+subject = 'sub30'
 
 project_path = Path.cwd()
 eeg_path = project_path / 'data' / subject / 'eeg' # adjust later accordingly
@@ -40,6 +40,8 @@ for eeg_files in eeg_path.iterdir():
             if subject == 'sub33' and 'a2_3' in eeg_files.name:
                 continue
             elif subject == 'sub35' and 'a1_0' in eeg_files.name:
+                continue
+            elif subject == 'sub30' and 'e2_0' in eeg_files.name:
                 continue
             else:
                 eeg_data = mne.io.read_raw_brainvision(eeg_files, preload=True)

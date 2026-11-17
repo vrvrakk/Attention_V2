@@ -47,7 +47,13 @@ eeg_file.rename_channels({'ref': 'FCz'})
 all_chs = eeg_file.ch_names
 
 # Select ROI
-sel_ch = ['FCz']
+if predictor == 'envelopes':
+    sel_ch = ['FCz']
+else:
+    sel_ch = ['F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8']
+    # sel_ch = ['FC1', 'FC2', 'FC3', 'FC4']
+
+
 ch_idx = np.isin(all_chs, sel_ch)
 
 assert ch_idx.sum() == len(sel_ch), f'Missing ROI channels: {set(sel_ch) - set(all_chs)}'

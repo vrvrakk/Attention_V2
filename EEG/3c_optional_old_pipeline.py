@@ -1,4 +1,16 @@
-
+'''
+lambda = 0.01,
+a-priori defined ROIs for envelopes and phonemes respectively
+separate zscore for each channel (axis = 1)
+mean centered envs if sparse, zscored if dense
+standardise sparse phoneme predictors
+concatenated arrays per plane
+permutation_cluster_test, fdr_correction for multiple time-windows
+time_windows defined ranging from 0 to 0.5 s
+time lag = -0.1 - 1.0 s
+ROI env: FCz
+ROI phon: frontotemporal
+'''
 import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -6,22 +18,19 @@ from matplotlib import font_manager
 font_manager.fontManager.addfont(r"C:\Windows\Fonts\times.ttf")
 plt.rcParams['font.family'] = 'Times New Roman'
 import mne
-from mne.stats import permutation_cluster_test
-from statsmodels.stats.multitest import multipletests
-from scipy.stats import t
+from mne.stats import fdr_correction
 
 # Parameters
-plane = 'azimuth'
+plane = 'elevation'
 
-predictor = 'envelopes'
+predictor = 'phonemes'
 
 model_type = 'combined' # envelopes, phonemes as other options
 
 norm = 'sep'
 
-# Select feature type: 'standard' or 'target_num'
-feature_type = 'target_num'
-
+# Select feature type: 'standard', non_targets, or 'target_num'
+feature_type = 'non_targets'
 
 project_path = Path.cwd()
 
@@ -44,14 +53,13 @@ if predictor == 'envelopes':
     sel_ch = ['FCz']
 else:
     sel_ch = ['F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8']
+    # sel_ch = ['FC1', 'FC2', 'FC3', 'FC4', 'FC5', 'FC6', 'FCz', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6']
 
 ch_idx = np.isin(all_chs, sel_ch)
 
 assert ch_idx.sum() == len(sel_ch), f'Missing ROI channels: {set(sel_ch) - set(all_chs)}'
 
 # Time vector
-# times = np.arange(64) / 125
-# times_ms = times * 1000
 times_ms = [-0.104, -0.096, -0.088, -0.08 , -0.072, -0.064, -0.056, -0.048,
        -0.04 , -0.032, -0.024, -0.016, -0.008,  0.   ,  0.008,  0.016,
         0.024,  0.032,  0.04 ,  0.048,  0.056,  0.064,  0.072,  0.08 ,
@@ -74,7 +82,6 @@ times_ms = np.asarray(times_ms) * 1000
 
 TIME_WINDOWS = [(50, 150), (150, 250), (250, 350), (350, 500)]
 
-from mne.stats import permutation_cluster_test, fdr_correction
 
 def run_windowed_permutations(target_mean, distr_mean):
 
@@ -88,9 +95,19 @@ def run_windowed_permutations(target_mean, distr_mean):
         target_window = target_mean[:, idx]
         distractor_window = distr_mean[:, idx]
 
-        T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test([target_window, distractor_window], threshold=None,
-            n_permutations=1000, n_jobs=-1, seed=42)
+        X = target_window - distractor_window
+        df = X.shape[0] - 1
 
+        from scipy.stats import t
+        threshold = t.ppf(1 - 0.05 / 2, df)
+
+        from mne.stats import permutation_cluster_1samp_test
+        T_obs, clusters, cluster_p_values, H0 = permutation_cluster_1samp_test(X, threshold=threshold,
+                                                                               n_permutations=100000, n_jobs=-1, tail=0,
+                                                                               seed=42)
+
+        # T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test([target_window, distractor_window], threshold=None,
+        #     n_permutations=1000, n_jobs=-1, seed=42)
         for cl, pval in zip(clusters, cluster_p_values):
             cluster_idx = idx[cl[0]]
 
@@ -101,7 +118,8 @@ def run_windowed_permutations(target_mean, distr_mean):
     if not all_pvals:
         return []
 
-    # FDR correction across clusters from ALL four windows
+    # FDR correction across clusters from ALL four windows - to account for false positives across the
+    # exploratory window clusters.
     reject, pvals_fdr = fdr_correction(np.asarray(all_pvals), alpha=0.05)
 
     significant_clusters = []
@@ -244,7 +262,6 @@ def plot_weights(target_mean, distr_mean, target_sem, distractor_sem):
         print('No significant clusters found. No topomaps generated.')
 
     return all_pvals, all_times
-
 
 
 plot_weights(target_mean, distr_mean, t_sem, d_sem)
